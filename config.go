@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -203,18 +204,42 @@ func (c *Config) getOutputWriter() (io.Writer, error) {
 	case OutputFile:
 		// If file path is specified in formatter data
 		if filePath, ok := c.Formatter.Data["file"].(string); ok && filePath != "" {
-			file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+			// Validate file path to prevent path traversal
+			cleanPath := filepath.Clean(filePath)
+			if !filepath.IsAbs(cleanPath) {
+				// Convert relative paths to absolute using current directory
+				cwd, err := os.Getwd()
+				if err != nil {
+					return nil, fmt.Errorf("failed to get current directory: %w", err)
+				}
+				cleanPath = filepath.Join(cwd, cleanPath)
+			}
+			
+			// Use more restrictive file permissions (0600 instead of 0666)
+			file, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 			if err != nil {
-				return nil, fmt.Errorf("failed to open log file %q: %w", filePath, err)
+				return nil, fmt.Errorf("failed to open log file %q: %w", cleanPath, err)
 			}
 			return file, nil
 		}
 		return nil, fmt.Errorf("file output specified but no file path provided in formatter data")
 	default:
 		// Assume it's a file path
-		file, err := os.OpenFile(c.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		// Validate file path to prevent path traversal
+		cleanPath := filepath.Clean(c.Output)
+		if !filepath.IsAbs(cleanPath) {
+			// Convert relative paths to absolute using current directory
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get current directory: %w", err)
+			}
+			cleanPath = filepath.Join(cwd, cleanPath)
+		}
+		
+		// Use more restrictive file permissions (0600 instead of 0666)
+		file, err := os.OpenFile(cleanPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open log file %q: %w", c.Output, err)
+			return nil, fmt.Errorf("failed to open log file %q: %w", cleanPath, err)
 		}
 		return file, nil
 	}
